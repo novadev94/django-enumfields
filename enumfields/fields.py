@@ -1,3 +1,4 @@
+import collections
 from enum import Enum
 
 import django
@@ -9,6 +10,7 @@ from django.utils.functional import cached_property
 from django.utils.module_loading import import_string
 
 from .forms import EnumChoiceField
+from .utils import import_class
 
 
 class CastOnAssignDescriptor(object):
@@ -25,7 +27,11 @@ class CastOnAssignDescriptor(object):
     def __get__(self, obj, type=None):
         if obj is None:
             return self
-        return obj.__dict__[self.field.name]
+        if self.field.name in obj.__dict__:
+            return obj.__dict__[self.field.name]
+        else:
+            obj.refresh_from_db(fields=[self.field.name])
+            return getattr(obj, self.field.name)
 
     def __set__(self, obj, value):
         obj.__dict__[self.field.name] = self.field.to_python(value)
@@ -35,14 +41,22 @@ class EnumFieldMixin(object):
     def __init__(self, enum, **options):
         if isinstance(enum, six.string_types):
             self.enum = import_string(enum)
+        elif isinstance(enum, collections.Sequence):
+            self.enum = import_class(enum)
         else:
             self.enum = enum
 
-        if "choices" not in options:
-            options["choices"] = [  # choices for the TypedChoiceField
-                (i, getattr(i, 'label', i.name))
-                for i in self.enum
-            ]
+        # This allows unneeded choices to be hidden from Admin page
+        include_enums = options.pop('include', None)
+        exclude_enums = options.pop('exclude', None)
+        if 'choices' not in options:
+            all_enums = (e for e in self.enum)
+            include_enums = include_enums or all_enums
+            exclude_enums = exclude_enums or ()
+            # choices for the TypedChoiceField
+            options['choices'] = tuple(
+                (e, getattr(e, 'label', e.name))
+                for e in include_enums if e not in exclude_enums)
 
         super(EnumFieldMixin, self).__init__(**options)
 
@@ -98,8 +112,9 @@ class EnumFieldMixin(object):
         return super(EnumFieldMixin, self).get_default()
 
     def deconstruct(self):
+        from qualname import qualname
         name, path, args, kwargs = super(EnumFieldMixin, self).deconstruct()
-        kwargs['enum'] = self.enum
+        kwargs['enum'] = (self.enum.__module__, qualname(self.enum))
         kwargs.pop('choices', None)
         if 'default' in kwargs:
             if hasattr(kwargs["default"], "value"):
