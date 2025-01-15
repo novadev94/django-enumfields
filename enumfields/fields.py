@@ -142,23 +142,7 @@ class EnumFieldMixin(object):
         )
 
 
-class EnumField(EnumFieldMixin, models.CharField):
-    def __init__(self, enum, **kwargs):
-        kwargs.setdefault("max_length", 10)
-        super(EnumField, self).__init__(enum, **kwargs)
-        self.validators = []
-
-
-class EnumIntegerField(EnumFieldMixin, models.IntegerField):
-    @cached_property
-    def validators(self):
-        # Skip IntegerField validators, since they will fail with
-        #   TypeError: unorderable types: TheEnum() < int()
-        # when used database reports min_value or max_value from
-        # connection.ops.integer_field_range method.
-        next = super(models.IntegerField, self)
-        return next.validators
-
+class EnumIntegerFieldMixin(EnumFieldMixin):
     def get_prep_value(self, value):
         if value is None:
             return None
@@ -170,3 +154,42 @@ class EnumIntegerField(EnumFieldMixin, models.IntegerField):
             return int(value)
         except ValueError:
             return self.to_python(value).value
+
+
+class EnumField(EnumFieldMixin, models.CharField):
+    def __init__(self, enum, **kwargs):
+        kwargs.setdefault("max_length", 10)
+        super(EnumField, self).__init__(enum, **kwargs)
+        self.validators = []
+
+
+class EnumIntegerField(EnumIntegerFieldMixin, models.IntegerField):
+    @cached_property
+    def validators(self):
+        # Skip IntegerField validators, since they will fail with
+        #   TypeError: unorderable types: TheEnum() < int()
+        # when used database reports min_value or max_value from
+        # connection.ops.integer_field_range method.
+        next = super(models.IntegerField, self)
+        return next.validators
+
+
+class EnumSmallIntegerField(EnumIntegerFieldMixin, models.SmallIntegerField):
+    @cached_property
+    def validators(self):
+        next = super(models.SmallIntegerField, self)
+        return next.validators
+
+
+class EnumPositiveIntegerField(EnumIntegerFieldMixin, models.PositiveIntegerField):
+    @cached_property
+    def validators(self):
+        next = super(models.PositiveIntegerField, self)
+        return next.validators
+
+
+class EnumPositiveSmallIntegerField(EnumIntegerFieldMixin, models.PositiveSmallIntegerField):
+    @cached_property
+    def validators(self):
+        next = super(models.PositiveSmallIntegerField, self)
+        return next.validators
